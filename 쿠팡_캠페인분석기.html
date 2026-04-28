@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>쿠팡 캠페인 분석기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --accent:#2563eb; --green:#059669; --red:#dc2626;
+  --yellow:#d97706; --text:#111827; --text2:#374151;
+  --text3:#6b7280; --border:#e5e7eb; --bg:#f9fafb; --card:#ffffff;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif; background:var(--bg); color:var(--text); font-size:13px; }
+.header { background:#fff; border-bottom:1px solid var(--border); padding:14px 24px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.header-title { font-size:16px; font-weight:800; }
+.header-title span { color:var(--accent); }
+.header-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.upload-btn { padding:8px 16px; background:var(--accent); color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; }
+.upload-btn:hover { background:#1d4ed8; }
+#file-status { font-size:11px; color:var(--text3); }
+.ctrl-bar { display:flex; align-items:center; gap:12px; padding:10px 24px; background:#fff; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.ctrl-label { font-size:11px; color:var(--text3); font-weight:600; }
+.ctrl-bar select, .filter-bar select { padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--text2); background:#fff; cursor:pointer; }
+.content { padding:20px 24px; max-width:1400px; margin:0 auto; }
+.empty-state { text-align:center; padding:80px 20px; color:var(--text3); }
+.empty-state .icon { font-size:48px; margin-bottom:16px; }
+.empty-state h2 { font-size:18px; font-weight:700; color:var(--text2); margin-bottom:8px; }
+.empty-state p { font-size:13px; line-height:1.6; }
+.empty-hint { margin-top:20px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px 16px; font-size:11px; color:#1d4ed8; display:inline-block; max-width:440px; text-align:left; line-height:1.7; }
+.loading-overlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.9); z-index:999; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+.loading-overlay.show { display:flex; }
+.spinner { width:40px; height:40px; border:3px solid #e5e7eb; border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading-text { font-size:13px; color:var(--text3); }
+.loading-bar { width:200px; height:4px; background:#e5e7eb; border-radius:2px; overflow:hidden; }
+.loading-fill { height:100%; background:var(--accent); border-radius:2px; transition:width .3s; width:0%; }
+.filter-bar { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+.filter-label { font-size:11px; color:var(--text3); font-weight:600; white-space:nowrap; }
+.hint-box { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 16px; margin-bottom:14px; font-size:11px; line-height:1.6; color:var(--text2); }
+.hint-title { font-weight:700; color:#92400e; margin-bottom:4px; }
+.camp-table { width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06); font-size:12px; }
+.camp-table th { padding:9px 12px; background:#f8faff; color:var(--text3); font-weight:700; font-size:11px; text-align:center; border-bottom:1px solid var(--border); white-space:nowrap; cursor:pointer; user-select:none; vertical-align:bottom; }
+.camp-table th:first-child { text-align:left; }
+.camp-table td { padding:9px 12px; border-bottom:1px solid var(--border); text-align:right; white-space:nowrap; vertical-align:middle; }
+.camp-table td:first-child { text-align:left; }
+.camp-table tbody tr:hover td { background:#f8faff; cursor:pointer; }
+.camp-table tbody tr:last-child td { border-bottom:none; }
+.zone-row td { background:#fafafa; font-size:11px; color:var(--text3); }
+.zone-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:700; }
+.zone-search { background:#eff6ff; color:#2563eb; }
+.zone-nonsearch { background:#f5f3ff; color:#7c3aed; }
+.camp-expand-row td { padding:0; background:#f8faff; }
+.kw-panel-row td { padding:0; }
+.badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 700; letter-spacing: .5px;
+    font-family: 'Pretendard', sans-serif;
+  }
+  .badge-expand { background: #dcfce7; color: #166534; }
+  .badge-hold { background: #dbeafe; color: #1e40af; }
+  .badge-danger { background: #fef9c3; color: #854d0e; }
+  .badge-stop { background: #fee2e2; color: #991b1b; }
+  .badge-search { background: #ede9fe; color: #5b21b6; }
+  .badge-nonsearch { background: #f3f4f6; color: #6b7280; }
+
+  /* ── 차트 래퍼 ── */
+  .chart-box {
+    position: relative; height: 220px;
+  }
+  .chart-box.tall { height: 280px; }
+
+  /* ── 본전ROAS 입력 ── */
+  .roas-inputs {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 16px;
+  }
+  .roas-item {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 4px;
+    min-width: 180px;
+  }
+  .roas-item label { font-size: 10px; color: var(--text3); }
+  .roas-item input {
+    background: transparent; border: none;
+    color: var(--accent); font-family: 'Pretendard', sans-serif;
+    font-size: 16px; font-weight: 600; width: 80px;
+    outline: none;
+  }
+
+  /* ── 원가 입력 모달 ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.7); z-index: 200;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; width: 500px; max-width: 95vw;
+    max-height: 80vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+  .modal-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .modal-item label { flex: 1; font-size: 12px; color: var(--text2); }
+  .modal-item input {
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 5px 10px; border-radius: 6px;
+    font-family: 'Pretendard', sans-serif; font-size: 12px;
+    width: 100px; text-align: right;
+  }
+  .modal-item input:focus { outline: none; border-color: var(--accent); }
+  .modal-footer { margin-top: 16px; display: flex; gap: 10px; }
+  .btn-primary {
+    background: var(--accent2); color: #fff;
+    border: none; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: 'Pretendard', -apple-system, sans-serif;
+    flex: 1;
+  }
+  .btn-secondary {
+    background: transparent; color: var(--text2);
+    border: 1px solid var(--border); padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; cursor: pointer;
+    font-family: 'Pretendard', -apple-system, sans-serif;
+  }
+
+  /* ── 로딩 ── */
+  .loading-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(10,14,26,.9); z-index: 300;
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px;
+  }
+  .loading-overlay.show { display: flex; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-family: 'Pretendard', sans-serif; font-size: 13px; color: var(--text2); }
+  .loading-bar {
+    width: 200px; height: 3px;
+    background: var(--border); border-radius: 2px; overflow: hidden;
+  }
+  .loading-fill {
+    height: 100%; background: var(--accent);
+    width: 0%; transition: width .3s;
+  }
+
+  /* ── 빈 상태 ── */
+  .empty-state {
+    padding: 40px 24px; max-width: 860px; margin: 0 auto;
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 16px; }
+  .empty-title { font-size: 16px; font-weight: 700; color: var(--text2); margin-bottom: 8px; }
+  .empty-desc { font-size: 13px; color: var(--text3); line-height: 1.8; }
+
+  /* ── 드래그앤드롭 업로드 존 ── */
+  .upload-zone {
+    border: 2px dashed #93c5fd;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+    padding: 48px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    margin-bottom: 32px;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, #dbeafe 0%, #dcfce7 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(37,99,235,.12);
+  }
+  .upload-zone-icon { font-size: 52px; margin-bottom: 12px; }
+  .upload-zone-title { font-size: 18px; font-weight: 800; color: var(--text); margin-bottom: 6px; }
+  .upload-zone-sub { font-size: 13px; color: var(--text3); margin-bottom: 20px; }
+  .upload-zone-btn {
+    display: inline-block; padding: 12px 28px;
+    background: var(--accent); color: #fff;
+    border-radius: 10px; font-size: 14px; font-weight: 700;
+    box-shadow: 0 4px 12px rgba(37,99,235,.3);
+    transition: background .15s;
+  }
+  .upload-zone:hover .upload-zone-btn { background: #1d4ed8; }
+  .upload-zone-formats { margin-top: 12px; font-size: 11px; color: var(--text3); }
+
+  /* ── 다운로드 가이드 ── */
+  .guide-section {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    text-align: left;
+  }
+  .guide-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 20px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .guide-header-icon { font-size: 20px; }
+  .guide-header-text { font-size: 14px; font-weight: 800; color: var(--text); }
+  .guide-header-sub { font-size: 11px; color: var(--text3); margin-left: auto; }
+  .guide-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .guide-step {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .guide-step-num {
+    min-width: 24px; height: 24px;
+    background: var(--accent); color: #fff;
+    border-radius: 50%; font-size: 11px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .guide-step-content { flex: 1; }
+  .guide-step-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+  .guide-step-desc { font-size: 11px; color: var(--text3); line-height: 1.5; }
+  .guide-step-tag {
+    display: inline-block; margin-top: 4px;
+    background: #eff6ff; color: var(--accent);
+    border-radius: 4px; padding: 1px 6px;
+    font-size: 10px; font-weight: 700;
+  }
+  .guide-step.highlight { border-color: #93c5fd; background: #eff6ff; }
+  .guide-step.highlight .guide-step-title { color: var(--accent); }
+
+  /* ── 분석 힌트 박스 ── */
+  .hint-box {
+    background: #faf5ff;
+    border: 1px solid #e9d5ff;
+    border-radius: 10px; padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .hint-title { font-size: 11px; font-weight: 700; color: #7c3aed; margin-bottom: 6px; letter-spacing: .5px; }
+  .hint-text { font-size: 12px; color: #374151; line-height: 1.7; }
+
+  .section-title {
+    font-size: 13px; font-weight: 700; color: var(--text);
+    margin-bottom: 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pill {
+    font-size: 10px; font-family: 'Pretendard', sans-serif;
+    background: #f3f4f6; border: 1px solid var(--border);
+    color: #6b7280; padding: 2px 8px; border-radius: 10px;
+  }
+  .clickable-row { cursor: pointer; }
+  .clickable-row:hover td { background: #f5f3ff; }
+
+  /* 영역 상세 행 */
+  .area-detail-row td {
+    border-bottom: 1px solid #ede9fe;
+    font-size: 11px;
+  }
+  .area-detail-row:last-of-type td { border-bottom: 2px solid #e2e7ef; }
+
+  /* 캠페인 인라인 키워드 패널 */
+  
+.kw-panel-row td {
+    padding: 0 !important;
+    border-bottom: 2px solid var(--accent);
+  }
+  .kw-panel-inner {
+    background: #f8faff;
+    border-top: 1px solid #c7d9ff;
+    padding: 14px 20px 18px;
+  }
+  .kw-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .kw-panel-title {
+    font-size: 12px; font-weight: 700; color: var(--accent);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .kw-panel-close {
+    font-size: 11px; color: var(--text3); cursor: pointer;
+    padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: #fff;
+  }
+  .kw-panel-close:hover { background: #fee2e2; color: var(--red); border-color: #fca5a5; }
+  .kw-panel-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .kw-panel-table th {
+    background: #eff6ff; color: var(--accent);
+    padding: 6px 10px; text-align: right; font-weight: 600;
+    border-bottom: 1px solid #bfdbfe;
+  }
+  .kw-panel-table th:first-child { text-align: left; }
+  .kw-panel-table td {
+    padding: 5px 10px; text-align: right;
+    border-bottom: 1px solid #e5edff; font-variant-numeric: tabular-nums;
+  }
+  .kw-panel-table td:first-child { text-align: left; color: var(--text2); }
+  .kw-panel-table tr:last-child td { border-bottom: none; }
+  .kw-panel-table tr:hover td { background: #eff6ff; }
+  .kw-panel-empty { text-align: center; color: var(--text3); padding: 16px; font-size: 12px; }
+
+  /* ── 상품별 성과 인라인 확장 패널 ── */
+  .prod-expand-row td {
+    padding: 0 !important;
+    border-bottom: 2px solid #bfdbfe;
+    background: #f0f7ff;
+  }
+  .prod-expand-inner {
+    padding: 16px 20px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .prod-zone-card {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #e0e7ef;
+    border-radius: 10px;
+    padding: 14px 16px;
+    min-width: 0;
+  }
+  .prod-zone-card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .prod-zone-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .prod-zone-stat {
+    text-align: center;
+  }
+  .prod-zone-stat-label {
+    font-size: 10px;
+    color: var(--text3);
+    margin-bottom: 2px;
+  }
+  .prod-zone-stat-val {
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .prod-zone-diag {
+    border-top: 1px solid #e5edff;
+    padding-top: 10px;
+    font-size: 12px;
+  }
+  .prod-zone-diag-label {
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .prod-zone-diag-detail {
+    color: var(--text3);
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .prod-row-clickable {
+    cursor: pointer;
+  }
+  .prod-row-clickable:hover td {
+    background: #f0f7ff !important;
+  }
+  .prod-expand-toggle {
+    font-size: 10px;
+    color: var(--text3);
+    padding: 2px 6px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    margin-left: 6px;
+  }
+
+  /* ── 입찰 전략 카드 ── */
+  
+.prod-bid-card {
+    background: #fff;
+    border: 1px solid #e0e7ef;
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .prod-bid-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .prod-bid-stat-row {
+    display: flex;
+    gap: 24px;
+    font-size: 13px;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+  }
+  .prod-bid-body {
+    color: var(--text2);
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  /* ── 실마진 탭 전용 스타일 ── */
+  
+</style>
+</head>
+<body>
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">파일 분석 중...</div>
+  <div class="loading-bar"><div class="loading-fill" id="loading-fill"></div></div>
+</div>
+
+<div class="header">
+  <div class="header-title">🎯 쿠팡 <span>캠페인 분석기</span></div>
+  <div class="header-right">
+    <span id="file-status">광고보고서 xlsx 파일을 업로드하세요</span>
+    <button class="upload-btn" onclick="document.getElementById('file-input').click()">⬆ 보고서 업로드</button>
+    <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
+  </div>
+</div>
+
+<div class="ctrl-bar" id="ctrl-bar" style="display:none">
+  <span class="ctrl-label">전환 기준</span>
+  <select id="conv-select" onchange="G.conv=this.value; renderCampaigns()">
+    <option value="14d">14일 전환</option>
+    <option value="1d">1일 전환</option>
+  </select>
+  <span class="ctrl-label" style="margin-left:8px">기간</span>
+  <select id="period-filter" onchange="applyPeriodFilter(); renderCampaigns()">
+    <option value="all">전체</option>
+    <option value="7">최근 7일</option>
+    <option value="14">최근 14일</option>
+    <option value="30">최근 30일</option>
+  </select>
+  <span id="data-summary" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>
+</div>
+
+<div class="content">
+  <div class="empty-state" id="empty-state">
+
+    <!-- 드래그앤드롭 업로드 존 -->
+    <div class="upload-zone" id="upload-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="event.preventDefault(); this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="this.classList.remove('drag-over'); handleFileDrop(event)">
+      <div class="upload-zone-icon">📂</div>
+      <div class="upload-zone-title">보고서 파일을 여기에 드래그하거나 클릭하세요</div>
+      <div class="upload-zone-sub">쿠팡 광고 관리센터에서 다운로드한 xlsx 파일을 업로드해 주세요</div>
+      <div class="upload-zone-btn">⬆ 파일 선택하기</div>
+      <div class="upload-zone-formats">지원 형식: .xlsx, .xls &nbsp;·&nbsp; 🔒 데이터는 브라우저 안에서만 처리됩니다</div>
+    </div>
+
+    <!-- 다운로드 방법 가이드 -->
+    <div class="guide-section">
+      <div class="guide-header">
+        <span class="guide-header-icon">📋</span>
+        <span class="guide-header-text">쿠팡 광고 보고서 다운로드 방법</span>
+        <span class="guide-header-sub">광고관리센터 → 보고서 → 매출 성장 광고 보고서</span>
+      </div>
+      <div class="guide-steps">
+        <div class="guide-step">
+          <div class="guide-step-num">1</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">보고서 기간 설정</div>
+            <div class="guide-step-desc">원하는 분석 기간을 선택</div>
+            <span class="guide-step-tag">지난주 / 지난달 / 기간 설정</span>
+          </div>
+        </div>
+        <div class="guide-step highlight">
+          <div class="guide-step-num">2</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">기간 구분 → 일별 선택</div>
+            <div class="guide-step-desc">반드시 <b>일별</b>로 선택해야 합니다</div>
+            <span class="guide-step-tag">⚠ 합계 X → 일별 O</span>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-step-num">3</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">캠페인 선택</div>
+            <div class="guide-step-desc">분석할 캠페인 선택</div>
+            <span class="guide-step-tag">모든 캠페인 권장</span>
+          </div>
+        </div>
+        <div class="guide-step highlight">
+          <div class="guide-step-num">4</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">보고서 구조 선택</div>
+            <div class="guide-step-desc"><b>캠페인 &gt; 광고그룹 &gt; 상품 &gt; 키워드</b> 선택<br>✅ 클릭이 발생한 키워드만 포함 체크</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-step-num">5</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">보고서 만들기 클릭</div>
+            <div class="guide-step-desc">파란색 버튼 클릭 후 생성 대기</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-step-num">6</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">다운로드</div>
+            <div class="guide-step-desc">생성 완료 후 다운로드 버튼 클릭 → xlsx 파일 저장</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="camp-content" style="display:none">
+    <div class="filter-bar">
+      <span class="filter-label">정렬</span>
+      <select id="camp-sort" onchange="campSort(this.value)">
+        <option value="adcost">광고비 높은순</option>
+        <option value="roas">ROAS 높은순</option>
+        <option value="revenue">전환매출 높은순</option>
+        <option value="orders">판매수량 높은순</option>
+        <option value="ctr">클릭률 높은순</option>
+        <option value="cvr">전환율 높은순</option>
+        <option value="cpm">CPM 높은순</option>
+        <option value="cpc">CPC 높은순</option>
+        <option value="cpa">전환당비용 낮은순</option>
+        <option value="impressions">노출수 높은순</option>
+        <option value="clicks">클릭수 높은순</option>
+      </select>
+      <span style="font-size:11px;color:var(--text3);margin-left:8px">캠페인 <b id="camp-total" style="color:var(--accent)">0</b></span>
+    </div>
+    <div class="hint-box">
+      <div class="hint-title">💡 분석 포인트</div>
+      캠페인을 <b>클릭</b>하면 키워드 상세 성과를 볼 수 있습니다.
+      검색/비검색 ROAS를 비교하고, 본전ROAS보다 낮은 영역의 입찰가를 조정하세요.
+    </div>
+    <table class="camp-table">
+      <thead><tr>
+        <th style="width:32px"></th>
+        <th onclick="campSort('name')" style="text-align:left">캠페인명</th>
+        <th onclick="campSort('impressions')">노출수</th>
+        <th onclick="campSort('clicks')">클릭수</th>
+        <th onclick="campSort('orders')">판매수량</th>
+        <th onclick="campSort('ctr')">클릭률</th>
+        <th onclick="campSort('cvr')">전환율</th>
+        <th onclick="campSort('cpm')">CPM</th>
+        <th onclick="campSort('cpc')">CPC</th>
+        <th onclick="campSort('adcost')"><span style="display:block;font-size:9px;font-weight:400;color:#9ca3af">VAT포함</span>광고비</th>
+        <th onclick="campSort('revenue')">전환매출</th>
+        <th onclick="campSort('roas')">ROAS</th>
+        <th onclick="campSort('cpa')">전환당비용</th>
+        <th>진단</th>
+      </tr></thead>
+      <tbody id="camp-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let G = {
+  raw: [], conv: '14d', prodFilter: 'all', kwFilter: 'all',
+  campSortKey: 'adcost', costs: {}, charts: {}
+};
+
+const DIAG = {
+  S_CTR: 1.0,   // 검색 클릭률 양호 기준 (%)
+  S_CVR: 3.0,   // 검색 전환율 양호 기준 (%)
+  N_CVR: 2.0,   // 비검색 전환율 양호 기준 (% — 비검색은 구조적으로 낮아 2%면 양호)
+  // 비검색 클릭률은 진단 제외 (노출 극단적으로 많아 0.1%도 정상)
+  MIN_CLICKS: 5 // 최소 클릭수 (미만이면 데이터 부족)
+};
+
+function showLoading(msg) { document.getElementById('loading').classList.add('show'); setLoadingText(msg,0); }
+function hideLoading() { document.getElementById('loading').classList.remove('show'); }
+function setLoadingText(msg, pct) {
+  document.getElementById('loading-text').textContent = msg;
+  document.getElementById('loading-fill').style.width = pct+'%';
+}
+
+function handleFileDrop(e) {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  processFile(file);
+}
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  processFile(file);
+}
+
+function processFile(file) {
+  showLoading('파일 읽는 중...');
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      setLoadingText('데이터 파싱 중...', 30);
+      const wb = XLSX.read(ev.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      setLoadingText('데이터 처리 중...', 60);
+      parseData(rows);
+      if (G.raw.length === 0) {
+        hideLoading();
+        alert('데이터를 읽었으나 유효한 행이 없습니다.\n헤더(날짜, 캠페인명 등)가 포함된 쿠팡 광고 보고서 xlsx 파일인지 확인해주세요.');
+        return;
+      }
+      setLoadingText('화면 렌더링 중...', 85);
+      setTimeout(() => {
+        try {
+          renderAll();
+          document.getElementById('file-status').textContent = `✓ ${file.name} (${G.raw.length.toLocaleString()}행)`;
+        } catch(renderErr) {
+          console.error('렌더링 오류:', renderErr);
+          alert('화면 그리기 오류: ' + renderErr.message);
+        }
+        hideLoading();
+      }, 100);
+    } catch(err) {
+      hideLoading();
+      console.error('파일 처리 오류:', err);
+      alert('파일 읽기 실패: ' + err.message + '\n\n지원 형식: .xlsx, .xls');
+    }
+  };
+  reader.onerror = () => {
+    hideLoading();
+    alert('파일을 읽을 수 없습니다.');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseData(rows) {
+  const hdr = rows[0];
+  const idx = {};
+  hdr.forEach((h,i) => { if(h) idx[String(h).trim()] = i; });
+
+  // 필수 컬럼 체크
+  const required = ['날짜', '캠페인명', '노출수', '클릭수', '광고비'];
+  const missing = required.filter(k => idx[k] === undefined);
+  if (missing.length > 0) {
+    console.warn('누락 컬럼:', missing);
+    console.log('감지된 헤더:', Object.keys(idx));
+  }
+
+  G.raw = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[idx['날짜']]) continue;
+
+    const dateRaw = row[idx['날짜']];
+    let dateStr;
+    if (typeof dateRaw === 'number') {
+      const s = String(Math.round(dateRaw));
+      if (s.length === 8) dateStr = `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+      else {
+        const d = XLSX.SSF.parse_date_code(dateRaw);
+        if (d) dateStr = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+      }
+    } else { dateStr = String(dateRaw).slice(0,10); }
+
+    const parseRoas = v => {
+      if (v === undefined || v === null || v === '-') return 0;
+      const s = String(v).replace('%','').replace(',','');
+      return parseFloat(s) || 0;
+    };
+
+    G.raw.push({
+      date: dateStr,
+      adType: row[idx['광고유형']] || '',
+      campaignId: row[idx['캠페인 ID']] || '',
+      campaignName: row[idx['캠페인명']] || '',
+      adGroup: row[idx['광고그룹']] || '',
+      productName: row[idx['광고집행 상품명']] || '',
+      optionId: String(row[idx['광고집행 옵션ID']] || ''),
+      zone: row[idx['광고 노출 지면']] || '',
+      keyword: row[idx['키워드']] || '-',
+      impressions: +row[idx['노출수']] || 0,
+      clicks: +row[idx['클릭수']] || 0,
+      adCost: (+row[idx['광고비']] || 0) * 1.1, // VAT(10%) 포함 실지출액
+      ctr: parseFloat(String(row[idx['클릭률']]||'0').replace('%','')) || 0,
+      orders1d: +row[idx['총 주문수(1일)']] || 0,
+      revenue1d: +row[idx['총 전환매출액(1일)']] || 0,
+      roas1d: parseRoas(row[idx['총광고수익률(1일)']]),
+      orders14d: +row[idx['총 주문수(14일)']] || 0,
+      revenue14d: +row[idx['총 전환매출액(14일)']] || 0,
+      roas14d: parseRoas(row[idx['총광고수익률(14일)']]),
+    });
+  }
+}
+
+// ══════════════════ 필터 ══════════════════
+function getFiltered() {
+  let data = G.raw;
+  if (G._dateFilter) {
+    data = data.filter(r => r.date >= G._dateFilter);
+  }
+  return data;
+}
+
+function getBreakeven() {
+  return parseFloat(document.getElementById('breakeven-input')?.value) || 400;
+}
+
+// ══════════════════ 집계 유틸 ══════════════════
+function aggBy(data, keyFn) {
+  const map = {};
+  data.forEach(r => {
+    const k = keyFn(r);
+    if (!map[k]) map[k] = { adCost:0, revenue1d:0, revenue14d:0, impressions:0, clicks:0, orders1d:0, orders14d:0, rows:[] };
+    const m = map[k];
+    m.adCost += r.adCost;
+    m.revenue1d += r.revenue1d;
+    m.revenue14d += r.revenue14d;
+    m.impressions += r.impressions;
+    m.clicks += r.clicks;
+    m.orders1d += r.orders1d;
+    m.orders14d += r.orders14d;
+    m.rows.push(r);
+  });
+  return map;
+}
+
+function roas(cost, rev) { return cost > 0 ? (rev/cost*100) : 0; }
+function pct(n, total) { return total > 0 ? (n/total*100).toFixed(1)+'%' : '0%'; }
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function fmtW(n) { return '₩'+fmt(n); }
+function fmtPct(n) { return n.toFixed(1)+'%'; }
+function fmtAdCost(vat) {
+  return fmtW(Math.round(vat));
+}
+
+function getRevRoas(agg) {
+  return G.conv === '14d' ? agg.revenue14d : agg.revenue1d;
+}
+function getOrders(agg) {
+  return G.conv === '14d' ? agg.orders14d : agg.orders1d;
+}
+
+// 전환매출 반환 (쿠폰 미사용 — 광고보고서 매출 그대로 사용)
+function getCorrectedRev(agg, optionId) {
+  return getRevRoas(agg);
+}
+
+// 상품별 본전ROAS 반환 — 원가 입력 시 수수료(11.88%) 반영 자동 계산
+const COUPANG_FEE = 0.1188; // 쿠팡 수수료율
+
+// G.costs 구조: { optionId: { price, cogs, logistics } }
+//   price     = 실판매가
+//   cogs      = 순수 매입/제조 원가 (실마진탭이 참조)
+//   logistics = 입출고비+배송비/개 (본전ROAS 계산용, 선택)
+// 하위호환: 기존 cost 필드가 있으면 cogs로 취급
+
+function getCogs(optionId) {
+  const c = G.costs[optionId];
+  if (!c) return 0;
+  // 신규 구조 우선, 기존 cost 필드 fallback
+  return parseFloat(c.cogs || c.cost || 0);
+}
+
+function getLogistics(optionId) {
+  const c = G.costs[optionId];
+  if (!c) return 0;
+  return parseFloat(c.logistics || 0);
+}
+
+function calcMargin(price, cogs, logistics) {
+  const p  = parseFloat(price)     || 0;
+  const cg = parseFloat(cogs)      || 0;
+  const lg = parseFloat(logistics) || 0;
+  if (!p || p <= 0) return null;
+  // 마진 = 판매가 × (1 - 수수료) - 순수원가 - 입출고배송비
+  return p * (1 - COUPANG_FEE) - cg - lg;
+}
+
+function getBeRoas(optionId) {
+  const fallback = parseFloat(document.getElementById('breakeven-input')?.value) || 400;
+  if (!optionId) return fallback;
+  const c = G.costs[optionId];
+  if (!c || !c.price) return fallback;
+  const cogs      = getCogs(optionId);
+  const logistics = getLogistics(optionId);
+  if (!cogs && !logistics) return fallback;
+  const margin = calcMargin(c.price, cogs, logistics);
+  if (!margin || margin <= 0) return fallback;
+  // 본전ROAS = 판매가 ÷ 마진 × 100
+  return Math.round(c.price / margin * 100);
+}
+
+function classify(roasVal, be) {
+  // adCost가 파싱 시점에 VAT포함(×1.1)이므로 ROAS에 별도 보정 불필요
+  if (roasVal >= be * 1.5) return 'expand';
+  if (roasVal >= be * 0.9) return 'hold';
+  if (roasVal >= be * 0.5) return 'danger';
+  return 'stop';
+}
+
+// ── 마진율 4단계 경영 진단 ──
+// 기준: 20%↑ 골든타임 / 10~20% 캐시카우 / 5~10% 고민구간 / 0~5% 헛장사 / 0미만 광고적자
+function marginDiag(marginRate) {
+  const r = parseFloat(marginRate);
+  if (isNaN(r))         return null;
+  if (r >= 20)          return { grade:'great',   color:'#16a34a', bg:'#f0fdf4', label:'✅ 골든타임',   short:'골든타임' };
+  if (r >= 10)          return { grade:'good',    color:'#2563eb', bg:'#eff6ff', label:'🔵 캐시카우',   short:'캐시카우' };
+  if (r >= 5)           return { grade:'caution', color:'#d97706', bg:'#fffbeb', label:'⚠️ 고민구간',   short:'고민구간' };
+  if (r >= 0)           return { grade:'danger',  color:'#dc2626', bg:'#fef2f2', label:'🚨 헛장사',     short:'헛장사'   };
+  return                         { grade:'loss',   color:'#7c3aed', bg:'#faf5ff', label:'💀 광고적자',   short:'광고적자' };
+}
+
+// 목표 CPA 계산: 목표 마진율 달성을 위해 허용 가능한 최대 CPA
+function targetCpa(price, margin, targetRate) {
+  if (!price || !margin) return null;
+  return Math.round(margin - (price * targetRate / 100));
+}
+
+// 마진 경고 메시지 생성
+function marginWarningMsg(marginRate, price, margin, cpa, oid) {
+  const diag = marginDiag(marginRate);
+  if (!diag) return '';
+  const r = parseFloat(marginRate);
+
+  let msg = '', actionHtml = '';
+
+  if (diag.grade === 'great') {
+    msg = `지금이 가장 좋은 구간입니다 🎉 광고가 효율적으로 돌아가고 있어요. 이 기회에 광고 예산을 늘려 매출을 더 키워보세요.`;
+  } else if (diag.grade === 'good') {
+    const tCpa15 = targetCpa(price, margin, 15);
+    msg = `안정적인 수익이 나고 있는 구간입니다. 주문 1건당 광고비가 너무 올라가지 않도록 꾸준히 확인해주세요.`;
+    if (tCpa15 && tCpa15 > 0) actionHtml = `<span style="color:#2563eb">지금 주문 1건당 광고비는 <b>₩${cpa.toLocaleString()}</b>입니다. 마진율 20%를 달성하려면 이 비용을 <b>₩${tCpa15.toLocaleString()} 이하</b>로 줄여야 해요. (<b>₩${(cpa-tCpa15).toLocaleString()} 절감 필요</b>)</span>`;
+  } else if (diag.grade === 'caution') {
+    const tCpa10 = targetCpa(price, margin, 10);
+    const tCpa15 = targetCpa(price, margin, 15);
+    msg = `반품이나 재고 비용까지 생각하면 수익이 거의 남지 않는 구간입니다. 비효율 키워드를 줄여서 광고비를 낮춰야 해요.`;
+    if (tCpa10 && tCpa10 > 0) actionHtml = `<span style="color:#d97706">지금 주문 1건당 광고비는 <b>₩${cpa.toLocaleString()}</b>입니다.<br>마진율 10% 달성 → 주문당 광고비 <b>₩${tCpa10.toLocaleString()} 이하</b>로 줄여야 해요.${tCpa15 > 0 ? `<br>마진율 15% 달성 → <b>₩${tCpa15.toLocaleString()} 이하</b>` : `<br>마진율 15% 달성 → <b>현재 구조로는 달성 어려움</b>`}</span>`;
+  } else if (diag.grade === 'danger') {
+    const tCpa5  = targetCpa(price, margin, 5);
+    const tCpa10 = targetCpa(price, margin, 10);
+    const refundBreak = tCpa5 && cpa > 0 ? Math.floor(margin / (cpa - (tCpa5||0)) * 10) : null;
+    msg = `수익이 매우 적은 위험 구간입니다.${refundBreak ? ` 반품이 ${refundBreak}건만 발생해도 이달 순이익이 0원이 됩니다.` : ''} 성과 없는 키워드를 제거해 광고비를 줄이는 게 가장 급합니다.`;
+    if (tCpa10 && tCpa10 > 0) actionHtml = `<span style="color:#dc2626">지금 주문 1건당 광고비는 <b>₩${cpa.toLocaleString()}</b>입니다.<br>마진율 10%를 달성하려면 이 비용을 <b>₩${tCpa10.toLocaleString()} 이하</b>로 줄여야 해요. (<b>₩${(cpa-tCpa10).toLocaleString()} 절감 필요</b>)</span>`;
+    else actionHtml = `<span style="color:#dc2626">개당 남는 마진(₩${Math.round(margin).toLocaleString()})이 너무 적어서 광고비만 줄이는 것으로는 부족합니다. 판매가 인상 또는 원가 절감을 함께 검토해주세요.</span>`;
+  } else { // loss
+    msg = `지금은 팔수록 손해가 나는 구조입니다. 광고비가 상품 마진보다 크기 때문입니다. 광고를 잠시 멈추고 원인을 먼저 파악하세요.`;
+    actionHtml = `<span style="color:#7c3aed">주문 1건당 광고비 <b>₩${cpa.toLocaleString()}</b> &gt; 개당 마진 <b>₩${Math.round(margin).toLocaleString()}</b> — 지금 주문이 들어올수록 건당 <b>₩${Math.abs(Math.round(margin-cpa)).toLocaleString()}씩 손실</b>이 발생하고 있어요.</span>`;
+  }
+
+  // 빌드업 접기 ID
+  const buid = 'buildup-'+oid;
+  const buildupToggle = (diag.grade === 'danger' || diag.grade === 'loss' || diag.grade === 'caution')
+    ? `<span style="margin-left:auto;font-size:11px;color:var(--text3);cursor:pointer;text-decoration:underline"
+        onclick="event.stopPropagation();const el=document.getElementById('${buid}');el.style.display=el.style.display==='none'?'block':'none'">
+        💡 랭킹 빌드업 중이신가요?</span>
+       <div id="${buid}" style="display:none;width:100%;margin-top:6px;padding:8px 12px;background:#f1f5f9;border-radius:6px;font-size:11px;color:var(--text3);line-height:1.6">
+         랭킹 확보를 위한 전략적 투자 구간이라면 이 경고는 무시하셔도 됩니다.<br>
+         판매 속도(주문수)와 자연 노출 증가 추이를 체크하며 목표 순위 달성 후 가격 인상을 계획하세요.
+       </div>` : '';
+
+  return `
+    <div style="margin-top:10px;padding:12px 14px;background:${diag.bg};border:1px solid ${diag.color}33;border-left:3px solid ${diag.color};border-radius:8px;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start">
+      <span style="font-weight:700;color:${diag.color};font-size:13px">${diag.label} (마진율 ${r.toFixed(1)}%)</span>
+      <span style="color:var(--text3);width:100%">${msg}</span>
+      ${actionHtml ? `<span style="width:100%">${actionHtml}</span>` : ''}
+      ${buildupToggle}
+    </div>`;
+}
+
+function badgeHtml(cls) {
+  const map = { expand:'badge-expand', hold:'badge-hold', danger:'badge-danger', stop:'badge-stop' };
+  const lbl = { expand:'🚀 확대', hold:'⚖️ 유지', danger:'⚠ 개선', stop:'🛑 중단' };
+  return `<span class="badge ${map[cls]}">${lbl[cls]}</span>`;
+}
+
+// ── 진단 로직 v3: 검색/비검색 분리 + 4분면 명칭 ──
+// 검색  기준: CTR ≥ 1.0%,  CVR ≥ 3.0%
+// 비검색 기준: CTR ≥ 0.1%, CVR ≥ 5.0%  (노출 극단적으로 많아 CTR 낮음이 정상)
+// 최소 클릭 5건 미만은 데이터 부족으로 판단 보류
+
+
+// 4분면 판정 반환 — { label, emoji, color, detail }
+function getQuadrant(ctr, cvr, clicks, ctrOK, cvrOK) {
+  if (clicks < DIAG.MIN_CLICKS) return null; // 데이터 부족
+  if (!ctrOK &&  cvrOK) return { label:'숨은 진주',   emoji:'💎', color:'#2563eb',   detail:'썸네일 개선' };
+  if ( ctrOK && !cvrOK) return { label:'밑빠진 독',   emoji:'🚨', color:'#d97706',   detail:'상세페이지 개선' };
+  if ( ctrOK &&  cvrOK) return { label:'황금 거위',   emoji:'⭐', color:'var(--green)', detail:'예산 확대' };
+  if (!ctrOK && !cvrOK) return { label:'총체적 난국', emoji:'🗑️', color:'var(--red)', detail:'광고 중단 검토' };
+  return null;
+}
+
+function diagnoseProdZone(sCtr, sCvr, sClicks, nCtr, nCvr, nClicks, nRoas, beRoas, hasSearch, hasNonSearch) {
+  const results = [];
+
+  // ── 검색 영역: CTR × CVR 4분면 ──
+  if (hasSearch) {
+    if (sClicks < DIAG.MIN_CLICKS && sClicks > 0) {
+      results.push({ zone:'검색', label:'데이터 부족', emoji:'📊', color:'var(--text3)' });
+    } else if (sClicks >= DIAG.MIN_CLICKS) {
+      const q = getQuadrant(sCtr, sCvr, sClicks, sCtr >= DIAG.S_CTR, sCvr >= DIAG.S_CVR);
+      if (q) results.push({ zone:'검색', ...q });
+    }
+  }
+
+  // ── 비검색 영역: ROAS × CVR 4구간 (클릭률 제외) ──
+  if (hasNonSearch) {
+    if (nClicks < DIAG.MIN_CLICKS && nClicks > 0) {
+      results.push({ zone:'비검색', label:'데이터 부족', emoji:'📊', color:'var(--text3)' });
+    } else if (nClicks >= DIAG.MIN_CLICKS) {
+      const roasOk = nRoas >= beRoas;
+      const cvrOk  = nCvr  >= DIAG.N_CVR;
+      if ( roasOk &&  cvrOk) results.push({ zone:'비검색', label:'초고효율 우수',   emoji:'⭐', color:'var(--green)' });
+      if ( roasOk && !cvrOk) results.push({ zone:'비검색', label:'고효율 캐시카우', emoji:'💰', color:'#2563eb' });
+      if (!roasOk &&  cvrOk) results.push({ zone:'비검색', label:'단가 조절 필요',  emoji:'🛠️', color:'#d97706' });
+      if (!roasOk && !cvrOk) results.push({ zone:'비검색', label:'밑빠진 독',       emoji:'🗑️', color:'var(--red)' });
+    }
+  }
+
+  if (!results.length) return '<span style="color:var(--text3);font-size:11px">-</span>';
+
+  return results.map(r =>
+    `<span style="color:${r.color};font-size:11px;display:block;white-space:nowrap;line-height:1.7">`
+    + `${r.emoji} <b>${r.zone}</b> ${r.label}</span>`
+  ).join('');
+}
+
+// ══════════════════ 전체 렌더 ══════════════════
+
+
+// ══════════════════ 전략 요약 ══════════════════
+function renderOverview() { /* 캠페인 분석기 전용 — 전략 요약 탭 없음 */ }
+
+// ══════════════════ 캠페인 분석 ══════════════════
+let campData = [];
+let expandedCamp = new Set();
+let expandedKw = null; // 키워드 패널 열린 캠페인 idx
+
+
+function getSearchQuadrantDetail(ctrOk, cvrOk) {
+  if (!ctrOk &&  cvrOk) return {
+    name: '💎 숨은 진주형',
+    color: '#2563eb', bg: '#eff6ff',
+    lines: [
+      '클릭률 낮음 — 상품은 좋은데 눈에 안 띔',
+      '썸네일·메인이미지 교체 우선',
+      '검색 리스트 내 경쟁사 대비 가격 경쟁력 확인'
+    ]
+  };
+  if ( ctrOk && !cvrOk) return {
+    name: '🚨 밑빠진 독형',
+    color: '#d97706', bg: '#fffbeb',
+    lines: [
+      '전환율 낮음 — 클릭은 되는데 구매로 안 이어짐',
+      '광고비 낮추거나 일시 중단 후 원인 파악 먼저',
+      '상세페이지 내 가격·이미지·리뷰 경쟁력 점검',
+      '경쟁사 대비 가격이 비싸진 건 아닌지 확인'
+    ]
+  };
+  if ( ctrOk &&  cvrOk) return {
+    name: '⭐ 황금 거위형',
+    color: '#16a34a', bg: '#f0fdf4',
+    lines: [
+      '클릭률·전환율 모두 우수 — 돈 붓는 만큼 번다',
+      '광고 예산 공격적으로 확대',
+      '수동 캠페인으로 핵심 키워드 집중 공략'
+    ]
+  };
+  return {
+    name: '🗑️ 총체적 난국형',
+    color: '#dc2626', bg: '#fff1f2',
+    lines: [
+      '클릭률·전환율 동시 부진 — 시장 수요 없거나 상품성 문제',
+      '광고 일시 중단 검토',
+      '상품 기획 전면 재검토 또는 단종'
+    ]
+  };
+}
+
+// ── 비검색 영역: ROAS × CVR 4구간 전용 상세 ──
+// 비검색은 클릭률이 구조적으로 낮아 CTR을 진단에서 제외하고 ROAS를 1차 기준으로 사용
+function getNonSearchQuadrantDetail(roasOk, cvrOk) {
+  if ( roasOk &&  cvrOk) return {
+    name: '⭐ 초고효율 우수',
+    color: '#16a34a', bg: '#f0fdf4',
+    lines: [
+      '노출 많은 비검색에서 전환까지 잘 일어나는 완벽한 흑자',
+      '수동 캠페인으로 분리 후 비검색 입찰가 150원↑ 설정',
+      '예산을 늘려 비검색 노출 비중 극대화'
+    ]
+  };
+  if ( roasOk && !cvrOk) return {
+    name: '💰 고효율 캐시카우',
+    color: '#2563eb', bg: '#eff6ff',
+    lines: [
+      '전환율은 낮지만 저렴한 단가 덕분에 흑자 유지 중 — 절대 끄지 말 것',
+      '수동 캠페인 비검색 입찰가 100~150원으로 세팅해 이익률 방어',
+      '리뷰 1~2개 추가·경쟁사 가격 점검으로 전환율 개선 시도'
+    ]
+  };
+  if (!roasOk &&  cvrOk) return {
+    name: '🛠️ 단가 조절 필요',
+    color: '#d97706', bg: '#fffbeb',
+    lines: [
+      '전환은 되는데 CPC가 너무 비싸 팔수록 적자 — 상품 자체는 OK',
+      '수동 캠페인으로 이동 후 비검색 입찰가를 100원 수준으로 대폭 낮추기',
+      '경쟁자 예산 소진되는 오후 골든타임에 저가 노출 노리기'
+    ]
+  };
+  return {
+    name: '🗑️ 밑빠진 독',
+    color: '#dc2626', bg: '#fff1f2',
+    lines: [
+      '전환도 수익도 없는 진짜 적자 상태',
+      "캠페인 내 '특정 상품 제외하기'로 즉시 OFF",
+      '썸네일·가격·상세페이지 전면 재단장 필요'
+    ]
+  };
+}
+
+// 영역별 카드 HTML 생성
+// isSearch=true  → 검색: CTR × CVR 4분면,  ctrOk/cvrOk 전달
+// isSearch=false → 비검색: ROAS × CVR 4구간, roasOk/cvrOk 전달 (ctrOk 무시)
+function buildZoneCard(label, icon, adCost, rev, ctr, cvr, cpc, roasVal, ord, clicks, impressions, flagA, flagB, isSearch, minClicks) {
+  // flagA: 검색=ctrOk / 비검색=roasOk
+  // flagB: 공통=cvrOk
+  const roasColor = roasVal > 0 ? (roasVal >= 400 ? 'var(--green)' : roasVal >= 200 ? 'var(--yellow)' : 'var(--red)') : 'var(--text3)';
+  const flagAColor = flagA ? 'var(--green)' : 'var(--red)';
+  const flagBColor = flagB ? 'var(--green)' : 'var(--red)';
+  const hasData    = clicks >= minClicks;
+
+  let diagHtml = '';
+  if (!hasData && clicks > 0) {
+    diagHtml = `<div class="prod-zone-diag">
+      <div class="prod-zone-diag-label" style="color:var(--text3)">📊 데이터 부족 (클릭 ${clicks}건)</div>
+      <div class="prod-zone-diag-detail">최소 ${minClicks}건 이상 쌓이면 진단 가능합니다.</div>
+    </div>`;
+  } else if (hasData) {
+    const d = isSearch
+      ? getSearchQuadrantDetail(flagA, flagB)
+      : getNonSearchQuadrantDetail(flagA, flagB);
+    diagHtml = `<div class="prod-zone-diag" style="border-top-color:${d.color}20;background:${d.bg}08">
+      <div class="prod-zone-diag-label" style="color:${d.color}">${d.name}</div>
+      <div class="prod-zone-diag-detail">${d.lines.map(l=>`• ${l}`).join('<br>')}</div>
+    </div>`;
+  }
+
+  return `<div class="prod-zone-card">
+    <div class="prod-zone-card-title">
+      <span style="font-size:16px">${icon}</span>
+      <span>${label}</span>
+      ${clicks===0 ? '<span style="color:var(--text3);font-size:11px;font-weight:400">데이터 없음</span>' : ''}
+    </div>
+    <div class="prod-zone-grid">
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">광고비</div>
+        <div class="prod-zone-stat-val">${fmtW(adCost)}</div>
+      </div>
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">전환매출</div>
+        <div class="prod-zone-stat-val">${fmtW(rev)}</div>
+      </div>
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">ROAS</div>
+        <div class="prod-zone-stat-val" style="color:${roasColor}">${roasVal>0?roasVal.toFixed(0)+'%':'-'}</div>
+      </div>
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">주문수</div>
+        <div class="prod-zone-stat-val">${fmt(ord)}</div>
+      </div>
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">클릭수</div>
+        <div class="prod-zone-stat-val">${fmt(clicks)}</div>
+      </div>
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">클릭률${isSearch ? '' : '<span style="font-size:9px;color:var(--text3)"> (참고)</span>'}</div>
+        <div class="prod-zone-stat-val" style="color:${clicks>0 && isSearch ? flagAColor : 'var(--text2)'}">${ctr>0?ctr.toFixed(2)+'%':'-'}</div>
+      </div>
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">전환율</div>
+        <div class="prod-zone-stat-val" style="color:${clicks>0?flagBColor:'var(--text3)'}">${cvr>0?cvr.toFixed(2)+'%':'-'}</div>
+      </div>
+      <div class="prod-zone-stat">
+        <div class="prod-zone-stat-label">평균 CPC</div>
+        <div class="prod-zone-stat-val">${cpc>0?fmtW(Math.round(cpc)):'-'}</div>
+      </div>
+    </div>
+    ${diagHtml}
+  </div>`;
+}
+// ── 3단계: 검색 vs 비검색 CVR 비교 → 입찰 전략 카드 ──
+// 조건: 양쪽 모두 최소 클릭 이상일 때만 의미 있는 비교 가능
+// 3단계: ROAS 비교 1차 기준 → 입찰 전략 카드
+function buildBidStrategyCard(sRoas, sCvr, sClicks, nRoas, nCvr, nClicks, beRoas, minClicks) {
+  const sValid  = sClicks >= minClicks;
+  const nValid  = nClicks >= minClicks;
+  if (!sValid && !nValid) return '';
+
+  const sProfit = sRoas >= beRoas;
+  const nProfit = nValid ? nRoas >= beRoas : null; // 데이터 없으면 null
+
+  // ── 사전 조건: 수익성 체크 ──
+
+  // 양쪽 모두 적자
+  if (sValid && nValid && !sProfit && !nProfit) {
+    return `<div class="prod-bid-card" style="border-left:3px solid var(--red)">
+      <div class="prod-bid-title">⚔️ 입찰 전략 제안 — <span style="color:var(--red)">🚨 광고 운영 전면 재검토</span></div>
+      <div class="prod-bid-stat-row" style="background:#fff1f2">
+        <span style="color:var(--red)">검색 ROAS <b>${sRoas.toFixed(0)}%</b> (본전 ${beRoas}% 미달)</span>
+        <span style="color:var(--red)">비검색 ROAS <b>${nRoas.toFixed(0)}%</b> (본전 ${beRoas}% 미달)</span>
+      </div>
+      <div class="prod-bid-body">
+        <b>두 영역 모두 본전 미달 적자 상태입니다.</b> 입찰 전략 논의 전에 상품 자체의 문제를 먼저 해결해야 합니다.<br><br>
+        <b>① 광고비 즉시 최소화</b> — 현재 광고비를 유지하면 손실만 커집니다.<br>
+        <b>② 전환율 원인 파악 우선</b> — 리뷰·가격·상세페이지 중 어디가 문제인지 확인하세요.<br>
+        <b>③ 개선 후 소액 테스트</b> — 문제를 해결한 뒤 하루 예산 1~2만원으로 재테스트하세요.<br>
+        <span style="color:var(--text3);font-size:11px">※ 지금 어느 영역을 밀어줘도 손실이 날 뿐입니다. ROAS가 본전(${beRoas}%) 이상이 된 후 입찰 전략을 재설계하세요.</span>
+      </div>
+    </div>`;
+  }
+
+  // 검색만 적자 (비검색만 흑자) — CTR/CVR로 원인 분기
+  if (sValid && nValid && !sProfit && nProfit) {
+    const sCvrAlive = sCvr >= DIAG.S_CVR; // 전환율 살아있는지 (3% 이상)
+    const sCtrAlive = sCtr >= DIAG.S_CTR; // 클릭률 살아있는지 (1% 이상)
+
+    let searchDiag = '';
+    if (!sCtrAlive && sCvrAlive) {
+      searchDiag = `검색에서 들어오면 구매는 잘 하는데 클릭을 안 해요. <b>썸네일·메인이미지 교체</b>가 우선입니다.`;
+    } else if (sCtrAlive && !sCvrAlive) {
+      searchDiag = `클릭은 잘 되는데 구매로 안 이어져요. <b>상세페이지·리뷰·가격 경쟁력</b>을 먼저 점검하세요.`;
+    } else {
+      searchDiag = `클릭률·전환율 모두 낮아요. 썸네일과 상세페이지를 함께 점검해야 합니다.`;
+    }
+
+    return `<div class="prod-bid-card" style="border-left:3px solid #7c3aed">
+      <div class="prod-bid-title">⚔️ 입찰 전략 제안 — <span style="color:#7c3aed">📱 비검색 집중 운영 권고</span></div>
+      <div class="prod-bid-stat-row">
+        <span style="color:var(--red)">검색 ROAS <b>${sRoas.toFixed(0)}%</b> ✕ 적자 (클릭률 ${sCtr.toFixed(2)}% / 전환율 ${sCvr.toFixed(1)}%)</span>
+        <span style="color:var(--green);font-weight:700">비검색 ROAS <b>${nRoas.toFixed(0)}%</b> ✓ 흑자</span>
+      </div>
+      <div class="prod-bid-body">
+        검색 영역은 적자, 비검색 영역만 수익이 나고 있습니다.<br>
+        검색 적자 원인: ${searchDiag}<br><br>
+        <b>✅ 비검색 집중 운영</b> — 수동 캠페인에서 비검색 입찰가 100~150원으로 세팅해 흑자 영역만 키우세요.<br>
+        <b>✅ 검색 광고 일시 축소</b> — 검색은 위 문제를 개선한 뒤 일 1만원 소액으로 재테스트하세요.<br>
+        <span style="color:var(--text3);font-size:11px">※ 비검색 흑자가 유지되는 한 광고를 완전히 끄면 오가닉 랭킹도 함께 떨어질 수 있어요.</span>
+      </div>
+    </div>`;
+  }
+
+  // 비검색만 적자 (검색만 흑자) — CVR 살아있으면 끄지 말고 100원 세팅
+  if (sValid && nValid && sProfit && !nProfit) {
+    const nCvrAlive = nCvr >= DIAG.N_CVR; // 전환율이 살아있는지 (2% 이상)
+    const estCpa100 = nCvr > 0 ? Math.round(100 / (nCvr / 100)) : 0; // 100원 세팅 시 예상 전환당비용
+
+    if (nCvrAlive) {
+      // 전환은 되는데 단가가 비싼 것 → 100원 세팅으로 살릴 수 있음
+      return `<div class="prod-bid-card" style="border-left:3px solid #d97706">
+        <div class="prod-bid-title">⚔️ 입찰 전략 제안 — <span style="color:#d97706">🛠️ 비검색 단가 조절 후 유지</span></div>
+        <div class="prod-bid-stat-row" style="background:#fffbeb">
+          <span style="color:var(--green);font-weight:700">검색 ROAS <b>${sRoas.toFixed(0)}%</b> ✓ 흑자</span>
+          <span style="color:#d97706">비검색 ROAS <b>${nRoas.toFixed(0)}%</b> ✕ 적자 — 단, 전환율 <b>${nCvr.toFixed(1)}%</b> 살아있음</span>
+        </div>
+        <div class="prod-bid-body">
+          비검색에서 적자가 나는 이유는 <b>상품이 나빠서가 아니라 클릭당 비용(CPC)이 너무 비싸기 때문</b>입니다. 전환율이 ${nCvr.toFixed(1)}%로 살아있으니 끄면 오히려 손해예요.<br><br>
+          <b>✅ 비검색을 끄지 말고 → 수동 캠페인으로 이사 후 입찰가 100~110원 고정</b><br>
+          <span style="color:var(--text3);font-size:11px">현재 클릭당 비용을 100원대로 낮추면 전환당 광고비가 대폭 줄어 흑자 전환이 가능합니다.${estCpa100 > 0 ? ` (100원 세팅 시 예상 전환당 광고비: 약 ₩${estCpa100.toLocaleString()})` : ''}</span><br><br>
+          <b>✅ 검색은 현재 흑자 — 수동 캠페인에 효율 좋은 키워드 등록 후 입찰가 유지</b><br>
+          <span style="color:var(--text3);font-size:11px">경쟁자 예산이 소진되는 오후 골든타임에 비검색 노출을 저가로 독식할 수 있습니다.</span>
+        </div>
+      </div>`;
+    } else {
+      // 전환율도 낮음 → 진짜로 끄거나 상세페이지 개선 필요
+      return `<div class="prod-bid-card" style="border-left:3px solid #2563eb">
+        <div class="prod-bid-title">⚔️ 입찰 전략 제안 — <span style="color:#2563eb">🔍 검색만 운영 권고</span></div>
+        <div class="prod-bid-stat-row">
+          <span style="color:var(--green);font-weight:700">검색 ROAS <b>${sRoas.toFixed(0)}%</b> ✓ 흑자</span>
+          <span style="color:var(--red)">비검색 ROAS <b>${nRoas.toFixed(0)}%</b> ✕ 적자 — 전환율 ${nCvr.toFixed(1)}% (기준 ${DIAG.N_CVR}% 미달)</span>
+        </div>
+        <div class="prod-bid-body">
+          비검색은 적자인데 전환율마저 낮아요. 클릭 비용을 낮춰도 구매로 이어지지 않는 상태입니다.<br><br>
+          <b>✅ 비검색 광고 일시 중단</b> — 지금은 광고비만 새고 있습니다.<br>
+          <b>✅ 검색 집중 운영</b> — 수동 캠페인 전환 후 효율 좋은 키워드 입찰가를 높이세요.<br>
+          <span style="color:var(--text3);font-size:11px">※ 비검색은 썸네일·상세페이지·가격을 개선한 뒤 소액(일 1만원)으로 재테스트하세요.</span>
+        </div>
+      </div>`;
+    }
+  }
+
+  // 한 쪽만 데이터 유효 — 단독 운영 안내
+  if (sValid && !nValid) {
+    return `<div class="prod-bid-card">
+      <div class="prod-bid-title">⚔️ 입찰 전략 제안</div>
+      <div class="prod-bid-body" style="color:var(--text3)">
+        비검색 데이터 부족(${nClicks}건)으로 비교 불가.<br>
+        검색 ROAS <b>${sRoas.toFixed(0)}%</b> — ${sProfit
+          ? '흑자 중. 수동 캠페인으로 핵심 키워드 입찰가를 높이세요.'
+          : `본전(${beRoas}%) 미달 적자. 광고비 축소 후 전환율 원인부터 파악하세요.`}
+      </div>
+    </div>`;
+  }
+  if (nValid && !sValid) {
+    return `<div class="prod-bid-card">
+      <div class="prod-bid-title">⚔️ 입찰 전략 제안</div>
+      <div class="prod-bid-body" style="color:var(--text3)">
+        검색 데이터 부족(${sClicks}건)으로 비교 불가.<br>
+        비검색 ROAS <b>${nRoas.toFixed(0)}%</b> — ${nProfit
+          ? '흑자 중. 비검색 입찰가 100~150원 유지하며 현 세팅을 지키세요.'
+          : `본전(${beRoas}%) 미달 적자. 비검색 입찰가를 낮추거나 광고를 중단하세요.`}
+      </div>
+    </div>`;
+  }
+
+  // ── 양쪽 모두 흑자 — ROAS 비교로 방향 제안 ──
+  const roasDiff    = Math.abs(sRoas - nRoas);
+  const roasTooClose = roasDiff < 50;
+
+  if (roasTooClose) {
+    return `<div class="prod-bid-card">
+      <div class="prod-bid-title">⚔️ 입찰 전략 제안 — <span style="color:var(--green)">✓ 두 영역 모두 흑자</span></div>
+      <div class="prod-bid-stat-row">
+        <span style="color:var(--green)">검색 ROAS <b>${sRoas.toFixed(0)}%</b> · 전환율 <b>${sCvr.toFixed(1)}%</b></span>
+        <span style="color:var(--green)">비검색 ROAS <b>${nRoas.toFixed(0)}%</b> · 전환율 <b>${nCvr.toFixed(1)}%</b></span>
+      </div>
+      <div class="prod-bid-body">
+        두 영역 ROAS 차이 ${roasDiff.toFixed(0)}%p로 효율이 비슷합니다.<br>
+        <b>✅ 균형 전략 추천</b>: 수동 캠페인에서 검색 키워드 입찰가를 유지하고,<br>
+        비검색 입찰가는 100~150원으로 세팅해 두 영역 모두 챙기세요.
+      </div>
+    </div>`;
+  }
+
+  if (nRoas > sRoas) {
+    const diff = (nRoas - sRoas).toFixed(0);
+    return `<div class="prod-bid-card" style="border-left:3px solid #7c3aed">
+      <div class="prod-bid-title">⚔️ 입찰 전략 제안 — <span style="color:#7c3aed">📱 비검색 집중 추천</span></div>
+      <div class="prod-bid-stat-row">
+        <span style="color:var(--green)">검색 ROAS <b>${sRoas.toFixed(0)}%</b> · 전환율 <b>${sCvr.toFixed(1)}%</b></span>
+        <span style="color:#7c3aed;font-weight:700">비검색 ROAS <b>${nRoas.toFixed(0)}%</b> ▲ ${diff}%p 우위</span>
+      </div>
+      <div class="prod-bid-body">
+        비검색 영역이 더 수익성이 높은 <b>저관여·충동구매</b> 성향 상품입니다.<br><br>
+        <b>✅ 자동(매출최적화) 광고</b> → 목표 ROAS를 <b>지금보다 높게</b> 설정<br>
+        <span style="color:var(--text3);font-size:11px">AI가 입찰가를 낮춰 단가 저렴한 비검색으로 예산을 집중 배분합니다.</span><br><br>
+        <b>✅ 수동 캠페인</b> → 비검색 입찰가를 <b>150원↑</b>로 설정해 노출 비중 극대화<br>
+        <span style="color:var(--text3);font-size:11px">동시에 검색 키워드도 수동 캠페인에 유지해 두 영역 모두 챙기세요.</span>
+      </div>
+    </div>`;
+  } else {
+    const diff = (sRoas - nRoas).toFixed(0);
+    return `<div class="prod-bid-card" style="border-left:3px solid #2563eb">
+      <div class="prod-bid-title">⚔️ 입찰 전략 제안 — <span style="color:#2563eb">🔍 검색 집중 추천</span></div>
+      <div class="prod-bid-stat-row">
+        <span style="color:#2563eb;font-weight:700">검색 ROAS <b>${sRoas.toFixed(0)}%</b> ▲ ${diff}%p 우위</span>
+        <span style="color:var(--green)">비검색 ROAS <b>${nRoas.toFixed(0)}%</b> · 전환율 <b>${nCvr.toFixed(1)}%</b></span>
+      </div>
+      <div class="prod-bid-body">
+        검색 영역이 더 수익성이 높은 <b>목적성·고관여</b> 성향 상품입니다.<br><br>
+        <b>✅ 자동(매출최적화) 광고</b> → 목표 ROAS를 <b>지금보다 낮게</b> 설정<br>
+        <span style="color:var(--text3);font-size:11px">AI가 입찰가를 높여 검색 결과 상단에 공격적으로 노출시킵니다.</span><br><br>
+        <b>✅ 수동 캠페인</b> → 효율 좋은 키워드 이전 후 입찰가 <b>상향</b><br>
+        <span style="color:var(--text3);font-size:11px">비검색 입찰가는 100~150원으로 유지해 흑자 비검색 매출도 놓치지 마세요.</span>
+      </div>
+    </div>`;
+  }
+}
+
+function renderCampaigns() {
+  if (!G.raw.length) return;
+  const data = getFiltered();
+  const be = getBreakeven();
+  const campAgg = aggBy(data, r => r.campaignName);
+
+  // 캠페인별 + 영역별 집계
+  const campAreaAgg = {};
+  data.forEach(r => {
+    if (!campAreaAgg[r.campaignName]) campAreaAgg[r.campaignName] = {};
+    const area = r.zone || '기타';
+    if (!campAreaAgg[r.campaignName][area]) campAreaAgg[r.campaignName][area] = { adCost:0, revenue1d:0, revenue14d:0, impressions:0, clicks:0, orders1d:0, orders14d:0 };
+    const a = campAreaAgg[r.campaignName][area];
+    a.adCost += r.adCost; a.revenue1d += r.revenue1d; a.revenue14d += r.revenue14d;
+    a.impressions += r.impressions; a.clicks += r.clicks;
+    a.orders1d += r.orders1d; a.orders14d += r.orders14d;
+  });
+
+  campData = Object.entries(campAgg).map(([name, a]) => {
+    const rev = getRevRoas(a);
+    const ord = getOrders(a);
+    const r = roas(a.adCost, rev);
+    const realR = r;
+    const ctr = a.impressions > 0 ? a.clicks/a.impressions*100 : 0;
+    const cvr = a.clicks > 0 ? ord/a.clicks*100 : 0;
+    const cpc = a.clicks > 0 ? a.adCost/a.clicks : 0;
+    const cpm = a.impressions > 0 ? a.adCost/a.impressions*1000 : 0;
+    const cpa = ord > 0 ? a.adCost/ord : 0;
+    return { name, ...a, rev, ord, r, realR, ctr, cvr, cpc, cpm, cpa, cls: classify(realR, be), areas: campAreaAgg[name] || {} };
+  });
+  campSort(G.campSortKey, false);
+  document.getElementById('camp-total').textContent = campData.length+'개';
+}
+
+function campSort(key, toggle=true) {
+  if(toggle) G.campSortKey = key;
+  const sortMap = {
+    name:(a,b)=>a.name.localeCompare(b.name),
+    adcost:(a,b)=>b.adCost-a.adCost,
+    revenue:(a,b)=>b.rev-a.rev,
+    roas:(a,b)=>b.realR-a.realR,
+    ctr:(a,b)=>b.ctr-a.ctr,
+    cvr:(a,b)=>b.cvr-a.cvr,
+    orders:(a,b)=>b.ord-a.ord,
+    clicks:(a,b)=>b.clicks-a.clicks,
+    impressions:(a,b)=>b.impressions-a.impressions,
+    cpc:(a,b)=>b.cpc-a.cpc,
+    cpm:(a,b)=>b.cpm-a.cpm,
+    cpa:(a,b)=>b.cpa-a.cpa
+  };
+  campData.sort(sortMap[key] || sortMap['adcost']);
+  const be = getBreakeven();
+
+  const areaLabel = { '검색 영역':'🔍 검색', '비검색 영역':'📱 비검색', '리타겟팅(외부 채널) - Product Ad':'🎯 리타게팅' };
+  const areaColor = { '검색 영역':'#2563eb', '비검색 영역':'#7c3aed', '리타겟팅(외부 채널) - Product Ad':'#ea580c' };
+  const areaBg   = { '검색 영역':'#eff6ff', '비검색 영역':'#faf5ff', '리타겟팅(외부 채널) - Product Ad':'#fff7ed' };
+
+  function makeAreaRows(camp, campIdx) {
+    const areas = camp.areas;
+    const areaOrder = ['검색 영역', '비검색 영역', '리타겟팅(외부 채널) - Product Ad'];
+    const isKwOpen = expandedKw === campIdx;
+    const rows = areaOrder.filter(z => areas[z] && areas[z].adCost > 0).map(zone => {
+      const a = areas[zone];
+      const rev = getRevRoas(a);
+      const ord = getOrders(a);
+      const r = roas(a.adCost, rev).toFixed(0);
+      const ctr = a.impressions > 0 ? (a.clicks/a.impressions*100).toFixed(2) : '0.00';
+      const cvr = a.clicks > 0 ? (ord/a.clicks*100).toFixed(2) : '0.00';
+      const cpc = a.clicks > 0 ? Math.round(a.adCost/a.clicks) : 0;
+      const cpm = a.impressions > 0 ? Math.round(a.adCost/a.impressions*1000) : 0;
+      const cpa = ord > 0 ? Math.round(a.adCost/ord) : 0;
+      const roasNum = parseFloat(r);
+      const color = areaColor[zone] || '#374151';
+      const bg = areaBg[zone] || '#f9fafb';
+      // 검색 영역만 클릭 가능한 키워드 뱃지로 표시
+      const isSearch = zone === '검색 영역';
+      const badgeActiveBg = isKwOpen ? '#2563eb' : color+'18';
+      const badgeActiveColor = isKwOpen ? '#fff' : color;
+      const badgeActiveBorder = isKwOpen ? '#2563eb' : color+'30';
+      const badgeStyle = isSearch
+        ? `cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:${badgeActiveBg};color:${badgeActiveColor};border:1px solid ${badgeActiveBorder};transition:all .15s`
+        : `display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:${color}18;color:${color};border:1px solid ${color}30`;
+      const clickAttr = isSearch
+        ? `onclick="event.stopPropagation();toggleKwPanel(${campIdx})" title="클릭 — 키워드 분석 펼치기"`
+        : '';
+      const label = areaLabel[zone] || zone;
+      const suffix = isSearch ? (isKwOpen ? ' ▲' : ' 🔑') : '';
+      return `<tr class="area-detail-row" style="background:${bg}">
+        <td></td>
+        <td style="padding-left:32px">
+          <span style="${badgeStyle}" ${clickAttr}>${label}${suffix}</span>
+        </td>
+        <td class="mono" style="color:#374151">${fmt(a.impressions)}</td>
+        <td class="mono" style="color:#374151">${fmt(a.clicks)}</td>
+        <td class="mono" style="color:#374151">${fmt(ord)}</td>
+        <td class="mono" style="color:#374151">${ctr}%</td>
+        <td class="mono" style="color:#374151">${cvr}%</td>
+        <td class="mono" style="color:#374151">₩${fmt(cpm)}</td>
+        <td class="mono" style="color:#374151">₩${fmt(cpc)}</td>
+        <td class="mono" style="color:#374151;vertical-align:top">${fmtAdCost(a.adCost)}</td>
+        <td class="mono" style="color:#374151">₩${fmt(rev)}</td>
+        <td class="mono" style="font-weight:600;color:${roasNum>=be?'var(--green)':'var(--red)'}">${r}%</td>
+        <td class="mono" style="color:#374151">${cpa>0?'₩'+fmt(cpa):'-'}</td>
+        <td></td>
+      </tr>`;
+    }).join('');
+
+    // 키워드 인라인 패널
+    const kwPanelRow = (isKwOpen && areas['검색 영역'])
+      ? `<tr class="kw-panel-row">
+          <td colspan="14">
+            <div class="kw-panel-inner">
+              <div class="kw-panel-header">
+                <div class="kw-panel-title">🔑 키워드 분석 — ${camp.name}</div>
+                <span class="kw-panel-close" onclick="event.stopPropagation();toggleKwPanel(${campIdx})">✕ 닫기</span>
+              </div>
+              ${renderKwPanel(camp.name)}
+            </div>
+          </td>
+        </tr>`
+      : '';
+
+    return rows + kwPanelRow;
+  }
+
+  document.getElementById('camp-body').innerHTML = campData.map((c, idx) => {
+    const isExpanded = expandedCamp.has(idx);
+    const expandIcon = isExpanded
+      ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;background:var(--accent);color:#fff;font-size:12px;font-weight:700">−</span>`
+      : `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;border:1px solid var(--border);color:var(--text3);font-size:12px;cursor:pointer">+</span>`;
+    const rowBg = isExpanded ? 'background:#f0f6ff;' : '';
+    const areaRows = isExpanded ? makeAreaRows(c, idx) : '';
+    return `
+    <tr onclick="toggleCampArea(${idx})" style="cursor:pointer;${rowBg}">
+      <td style="text-align:center">${expandIcon}</td>
+      <td style="color:var(--text);font-weight:500;max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${c.name}">${c.name.slice(0,20)}</td>
+      <td class="mono">${fmt(c.impressions)}</td>
+      <td class="mono">${fmt(c.clicks)}</td>
+      <td class="mono">${fmt(c.ord)}</td>
+      <td class="mono">${c.ctr.toFixed(2)}%</td>
+      <td class="mono">${c.cvr.toFixed(2)}%</td>
+      <td class="mono">₩${fmt(Math.round(c.cpm))}</td>
+      <td class="mono">₩${fmt(Math.round(c.cpc))}</td>
+      <td class="mono" style="vertical-align:top">${fmtAdCost(c.adCost)}</td>
+      <td class="mono">₩${fmt(c.rev)}</td>
+      <td class="mono" style="font-weight:600;color:${c.realR>=be?'var(--green)':'var(--red)'}">${c.realR.toFixed(0)}%</td>
+      <td class="mono">${c.cpa>0?'₩'+fmt(Math.round(c.cpa)):'-'}</td>
+      <td>${badgeHtml(c.cls)}</td>
+    </tr>
+    ${areaRows}`;
+  }).join('');
+}
+
+function toggleCampArea(idx) {
+  if (expandedCamp.has(idx)) {
+    expandedCamp.delete(idx);
+    // 캠페인 닫으면 해당 키워드 패널도 닫기
+    if (expandedKw === idx) expandedKw = null;
+  } else {
+    expandedCamp.add(idx);
+  }
+  campSort(G.campSortKey, false);
+}
+
+// ── 키워드 인라인 패널 토글 ──
+function toggleKwPanel(campIdx) {
+  expandedKw = expandedKw === campIdx ? null : campIdx;
+  campSort(G.campSortKey, false);
+}
+
+// 키워드 패널 정렬 상태 (캠페인명 → {key, asc})
+const kwPanelSort = {};
+
+function sortKwPanel(campName, key) {
+  if (!kwPanelSort[campName]) kwPanelSort[campName] = { key: 'adCost', asc: false };
+  const s = kwPanelSort[campName];
+  if (s.key === key) { s.asc = !s.asc; } else { s.key = key; s.asc = false; }
+  campSort(G.campSortKey, false); // 패널 포함 전체 리렌더
+}
+
+function renderKwPanel(campName) {
+  // 캠페인에 속한 대표 optionId로 쿠폰 보정 및 본전ROAS 결정
+  const campRows = getFiltered().filter(r => r.campaignName === campName);
+  const repOid = campRows[0]?.optionId || '';
+  const be = getBeRoas(repOid);
+
+  const data = campRows.filter(r => r.keyword && r.keyword !== '-' && r.zone === '검색 영역');
+  if (!data.length) return '<div class="kw-panel-empty">검색 영역 키워드 데이터가 없습니다.</div>';
+
+  const kwAgg = aggBy(data, r => r.keyword);
+  let kwList = Object.entries(kwAgg).map(([kw, a]) => {
+    const rev = getCorrectedRev(a, repOid);   // 쿠폰 보정 매출
+    const ord = getOrders(a);
+    const r = roas(a.adCost, rev);
+    const ctr = a.impressions > 0 ? a.clicks / a.impressions * 100 : 0;
+    const cvr = a.clicks > 0 ? ord / a.clicks * 100 : 0;
+    const cpc = a.clicks > 0 ? Math.round(a.adCost / a.clicks) : 0;
+    const cpa = ord > 0 ? Math.round(a.adCost / ord) : 0;
+    return { kw, ...a, rev, ord, r, ctr, cvr, cpc, cpa };
+  });
+
+  // 정렬 적용
+  if (!kwPanelSort[campName]) kwPanelSort[campName] = { key: 'adCost', asc: false };
+  const { key: sk, asc } = kwPanelSort[campName];
+  const sortFns = {
+    kw:          (a,b) => a.kw.localeCompare(b.kw),
+    impressions: (a,b) => a.impressions - b.impressions,
+    clicks:      (a,b) => a.clicks - b.clicks,
+    ctr:         (a,b) => a.ctr - b.ctr,
+    adCost:      (a,b) => a.adCost - b.adCost,
+    ord:         (a,b) => a.ord - b.ord,
+    cvr:         (a,b) => a.cvr - b.cvr,
+    rev:         (a,b) => a.rev - b.rev,
+    r:           (a,b) => a.r - b.r,
+    cpc:         (a,b) => a.cpc - b.cpc,
+    cpa:         (a,b) => a.cpa - b.cpa,
+  };
+  kwList.sort(sortFns[sk] || sortFns['adCost']);
+  if (!asc) kwList.reverse();
+
+  // 헤더 생성 헬퍼
+  function th(label, key, alignLeft=false) {
+    const active = sk === key;
+    const arrow = active ? (asc ? ' ▲' : ' ▼') : ' ↕';
+    const color = active ? 'var(--accent)' : '#6b7280';
+    const align = alignLeft ? 'left' : 'right';
+    return `<th style="text-align:${align};cursor:pointer;user-select:none;color:${color};white-space:nowrap"
+      onclick="event.stopPropagation();sortKwPanel('${campName.replace(/'/g,"\'")}','${key}')">
+      ${label}<span style="font-size:9px;opacity:0.7">${arrow}</span></th>`;
+  }
+
+  const rows = kwList.slice(0, 100).map(k => {
+    const roasColor = k.r >= be ? 'var(--green)' : k.r > 0 ? 'var(--yellow)' : 'var(--red)';
+    const cpaColor  = k.cpa > 0 && k.ord > 0 ? (k.r >= be ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+    let judge = k.r >= be * 1.5 ? '<span class="badge badge-expand">수동등록</span>'
+              : k.adCost >= 5000 && k.ord === 0 ? '<span class="badge badge-stop">제외검토</span>'
+              : k.ord >= 2 ? '<span class="badge badge-hold">모니터링</span>'
+              : '-';
+    return `<tr>
+      <td>${k.kw}</td>
+      <td>${fmt(k.impressions)}</td>
+      <td>${fmt(k.clicks)}</td>
+      <td>${k.ctr.toFixed(2)}%</td>
+      <td style="vertical-align:top">${fmtAdCost(k.adCost)}</td>
+      <td style="color:${k.ord>0?'var(--green)':'var(--text3)'}">${fmt(k.ord)}</td>
+      <td style="color:${k.cvr>=3?'var(--green)':k.cvr>0?'var(--yellow)':'var(--text3)'}">${k.cvr>0?k.cvr.toFixed(2)+'%':'-'}</td>
+      <td>${fmtW(k.rev)}</td>
+      <td style="color:${roasColor};font-weight:600">${k.r > 0 ? k.r.toFixed(0)+'%' : '-'}</td>
+      <td>${k.cpc > 0 ? fmtW(k.cpc) : '-'}</td>
+      <td style="color:${cpaColor};font-weight:600">${k.cpa > 0 ? fmtW(k.cpa) : '-'}</td>
+      <td>${judge}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div style="max-height:320px;overflow-y:auto">
+    <table class="kw-panel-table">
+      <thead><tr>
+        ${th('키워드','kw',true)}
+        ${th('노출수','impressions')}
+        ${th('클릭수','clicks')}
+        ${th('클릭률','ctr')}
+        ${th('<span style="display:block;font-size:9px;font-weight:400;color:#9ca3af">VAT포함</span>광고비','adCost')}
+        ${th('주문','ord')}
+        ${th('전환율','cvr')}
+        ${th('매출','rev')}
+        ${th('ROAS','r')}
+        ${th('CPC','cpc')}
+        ${th('전환당비용','cpa')}
+        <th style="text-align:right">판정</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+  <div style="font-size:10px;color:var(--text3);margin-top:8px">총 ${kwList.length}개 키워드 (최대 100개 표시) · 헤더 클릭으로 정렬</div>`;
+}
+
+function applyPeriodFilter() {
+  const pf = document.getElementById('period-filter');
+  if (!pf) return;
+  const days = parseInt(pf.value);
+  if (!isNaN(days)) {
+    const allDates = [...new Set(G.raw.map(r=>r.date))].sort();
+    G._dateFilter = allDates[Math.max(0, allDates.length - days)];
+  } else {
+    G._dateFilter = null;
+  }
+}
+
+// 캠페인 분석기 전용 renderAll — 원본의 renderAll을 완전히 대체
+function renderAll() {
+  if (!G.raw.length) return;
+  const dates = [...new Set(G.raw.map(r=>r.date))].sort();
+  const period = dates.length ? dates[0]+' ~ '+dates[dates.length-1] : '';
+  const prods  = new Set(G.raw.map(r=>r.optionId)).size;
+  document.getElementById('data-summary').textContent =
+    period+' · '+prods+'개 상품 · '+G.raw.length+'행';
+  document.getElementById('empty-state').style.display  = 'none';
+  document.getElementById('camp-content').style.display = '';
+  document.getElementById('ctrl-bar').style.display     = 'flex';
+  applyPeriodFilter();
+  renderCampaigns();
+}
+</script>
+</body>
+</html>
