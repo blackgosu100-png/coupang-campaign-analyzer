@@ -1,0 +1,13 @@
+.vercel
+__pycache__/
+*.pyc
+build/
+dist/
+dist_portable/
+*.tmp
+# 쿠키/인증 파일 (민감정보)
+*_cookies.json
+ad_cookies.json
+# 디버그 스크린샷
+debug_*.png
+error_*.png
