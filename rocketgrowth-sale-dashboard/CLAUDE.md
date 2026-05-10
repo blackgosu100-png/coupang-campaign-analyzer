@@ -28,3 +28,35 @@
 ## 주의
 - `wing_cookies.json`, `ad_cookies.json` — 민감 정보, 커밋 금지 (.gitignore 처리됨)
 - 쿠키 유효기간: 수일~수주 (만료 시 Chrome에서 자동 재취득)
+
+## 라이선스 시스템 (수강생 vendorId 화이트리스트)
+
+### 구조
+- Supabase `vendors` 테이블 (vendor_id, name, status, created_at)
+- status: `pending` | `approved`
+- vendorId: Wing `sc_vid` 쿠키에서 추출 (Coupang 셀러 고유 ID)
+
+### 신청 → 승인 흐름
+1. 수강생이 앱 실행 → Wing 로그인 → "수강생 등록 신청" 버튼
+2. 구글폼이 vendorId 자동 입력된 채로 열림 (entry.1452200275)
+3. 구글폼 제출 → Apps Script 트리거 → Supabase INSERT (status='pending')
+4. 운영자가 Supabase에서 승인:
+   ```sql
+   UPDATE vendors SET status = 'approved' WHERE vendor_id = 'A01234567';
+   ```
+5. 수강생 앱 새로고침 → 정상 진입
+
+### Apps Script 설치 위치
+- 백업: `apps_script/form_to_supabase.gs`
+- 이벤트 소스: **"설문지에서"** (스프레드시트에서 X)
+- 폼 편집 화면 점 3개(⋮) → Apps Script 에서 직접 열어야 "설문지에서" 옵션 나옴
+
+### 일괄 승인 SQL
+```sql
+UPDATE vendors SET status = 'approved'
+WHERE status = 'pending' AND created_at >= '2026-05-10';
+```
+
+### 구글폼 정보
+- Form ID: `1FAIpQLSeSzCrNeH0ZzfEFHYD5KT1tnTle4-E8ET3j9ASXITv1C8Fbow`
+- Vendor ID entry: `1452200275`
