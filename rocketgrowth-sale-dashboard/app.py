@@ -17,6 +17,7 @@ app.config['JSON_AS_ASCII'] = False
 import wing_api as wd
 import coupon_manager as cm
 import license as lc
+import ad_api as ad
 
 _dl_thread     = None
 _coupon_thread = None
@@ -145,6 +146,38 @@ def api_coupon_settings():
 @app.route('/api/coupon/reset', methods=['POST'])
 def api_coupon_reset():
     cm.STATUS.update({'state':'idle','message':'','logs':[],'coupons':[]})
+    return jsonify({'ok': True})
+
+
+# ════════════════ 광고 API ════════════════
+
+_ad_thread = None
+
+@app.route('/api/ads/download', methods=['POST'])
+def api_ads_download():
+    global _ad_thread
+    if ad.STATUS['state'] == 'running':
+        return jsonify({'ok': False, 'msg': '이미 실행 중입니다'})
+    data = request.get_json(force=True) or {}
+    start_date = data.get('start_date')
+    end_date   = data.get('end_date')
+    if not start_date or not end_date:
+        return jsonify({'ok': False, 'msg': '기간을 선택해주세요'})
+    ad.STATUS.update({'state': 'idle', 'message': '', 'logs': [], 'file': None})
+    _ad_thread = threading.Thread(
+        target=ad.run_ad_download, args=(start_date, end_date), daemon=True)
+    _ad_thread.start()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/ads/status')
+def api_ads_status():
+    return jsonify(ad.STATUS)
+
+
+@app.route('/api/ads/reset', methods=['POST'])
+def api_ads_reset():
+    ad.STATUS.update({'state': 'idle', 'message': '', 'logs': [], 'file': None})
     return jsonify({'ok': True})
 
 

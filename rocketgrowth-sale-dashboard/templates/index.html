@@ -379,6 +379,52 @@ tr:hover td{background:#f8faff}
   </div>
 </div>
 
+<!-- 광고 다운로드 모달 -->
+<div id="ad-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:700;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;width:520px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+    <div style="padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:15px;font-weight:800;color:var(--text)">쿠팡 광고 보고서 다운로드</div>
+      <button onclick="closeAdModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text3)">✕</button>
+    </div>
+    <div id="ad-step-idle" style="padding:24px">
+      <div style="font-size:13px;color:var(--text2);line-height:1.9;margin-bottom:16px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:10px;padding:14px">
+        광고센터 PA 보고서(키워드별 일별)를<br>
+        API로 자동 다운로드합니다. <b>1~2분</b> 소요됩니다.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px">시작일</div>
+          <input type="date" id="ad-start-date" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text)">
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px">종료일</div>
+          <input type="date" id="ad-end-date" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text)">
+        </div>
+      </div>
+      <button onclick="startAdDownload()" class="btn" style="width:100%;justify-content:center;padding:12px;font-size:14px;background:var(--purple)">▶ 시작</button>
+    </div>
+    <div id="ad-step-running" style="padding:24px;display:none">
+      <div style="text-align:center;margin-bottom:16px">
+        <div class="spinner" style="margin:0 auto 12px"></div>
+        <div id="ad-msg" style="font-size:13px;font-weight:600;color:var(--text2)">처리 중...</div>
+      </div>
+      <div id="ad-log-box" style="background:#111;border-radius:8px;padding:10px 12px;max-height:180px;overflow-y:auto;font-size:11px;font-family:monospace;color:#c4b5fd;line-height:1.6"></div>
+    </div>
+    <div id="ad-step-done" style="padding:24px;display:none;text-align:center">
+      <div style="font-size:40px;margin-bottom:10px">✅</div>
+      <div style="font-size:15px;font-weight:700;color:var(--green);margin-bottom:6px">다운로드 완료!</div>
+      <div id="ad-done-msg" style="font-size:12px;color:var(--text3);margin-bottom:20px"></div>
+      <button onclick="closeAdModal()" class="btn secondary" style="width:100%;justify-content:center">닫기</button>
+    </div>
+    <div id="ad-step-error" style="padding:24px;display:none;text-align:center">
+      <div style="font-size:40px;margin-bottom:10px">❌</div>
+      <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:8px">오류 발생</div>
+      <div id="ad-err-msg" style="font-size:12px;color:var(--text3);margin-bottom:20px"></div>
+      <button onclick="closeAdModal()" class="btn secondary" style="width:100%;justify-content:center">닫기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 헤더 -->
 <div class="hd">
   <div class="hd-left">
@@ -390,6 +436,7 @@ tr:hover td{background:#f8faff}
     <button class="btn secondary" onclick="exportCSV()" id="btn-export" style="display:none">⬇ CSV 내보내기</button>
     <button class="btn secondary" onclick="doCalculate()" id="btn-calc" disabled>▶ 마진 계산</button>
     <button class="btn" onclick="openCouponModal()" style="background:#f59e0b">🎫 쿠폰 관리</button>
+    <button class="btn" onclick="openAdModal()" style="background:var(--purple)">📊 광고 가져오기</button>
     <button class="btn" onclick="openDlModal()" style="background:var(--green)">⬇ 정산 가져오기</button>
   </div>
 </div>
@@ -1666,6 +1713,70 @@ function renderCouponTable(coupons) {
   } else {
     document.getElementById('coupon-empty-msg').style.display = 'none';
   }
+}
+
+// ── 광고 다운로드 ─────────────────────────────────────────────────────
+function openAdModal() {
+  document.getElementById('ad-backdrop').style.display = 'flex';
+  ['ad-step-idle','ad-step-running','ad-step-done','ad-step-error'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('ad-step-idle').style.display = '';
+
+  // 기본값: 지난달
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const first = new Date(y, m-1, 1), last = new Date(y, m, 0);
+  document.getElementById('ad-start-date').value = first.toISOString().slice(0,10);
+  document.getElementById('ad-end-date').value   = last.toISOString().slice(0,10);
+}
+
+function closeAdModal() {
+  document.getElementById('ad-backdrop').style.display = 'none';
+  fetch('/api/ads/reset', {method:'POST'});
+}
+
+let _adPoller = null;
+
+async function startAdDownload() {
+  const startStr = document.getElementById('ad-start-date').value;
+  const endStr   = document.getElementById('ad-end-date').value;
+  if (!startStr || !endStr) { alert('기간을 선택해주세요'); return; }
+
+  // YYYYMMDD 정수로 변환
+  const toInt = s => parseInt(s.replace(/-/g, ''));
+  const startDate = toInt(startStr);
+  const endDate   = toInt(endStr);
+
+  document.getElementById('ad-step-idle').style.display = 'none';
+  document.getElementById('ad-step-running').style.display = '';
+
+  await fetch('/api/ads/download', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({start_date: startDate, end_date: endDate})
+  });
+
+  _adPoller = setInterval(async () => {
+    const r = await fetch('/api/ads/status');
+    const s = await r.json();
+    document.getElementById('ad-msg').textContent = s.message || '처리 중...';
+    const logBox = document.getElementById('ad-log-box');
+    logBox.innerHTML = (s.logs || []).map(l => `<div>${l}</div>`).join('');
+    logBox.scrollTop = logBox.scrollHeight;
+
+    if (s.state === 'done') {
+      clearInterval(_adPoller);
+      document.getElementById('ad-step-running').style.display = 'none';
+      document.getElementById('ad-step-done').style.display = '';
+      document.getElementById('ad-done-msg').textContent = s.file ? `저장 위치: ${s.file}` : '완료';
+    } else if (s.state === 'error') {
+      clearInterval(_adPoller);
+      document.getElementById('ad-step-running').style.display = 'none';
+      document.getElementById('ad-step-error').style.display = '';
+      document.getElementById('ad-err-msg').textContent = s.message;
+    }
+  }, 1500);
 }
 
 // ── 라이선스 체크 ──────────────────────────────────────────────────────
