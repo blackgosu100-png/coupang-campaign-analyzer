@@ -168,6 +168,17 @@ tr:hover td{background:#f8faff}
 </head>
 <body>
 
+<!-- ── 라이선스 게이트 오버레이 ── -->
+<div id="license-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:40px 36px;max-width:420px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div id="lic-icon" style="font-size:48px;margin-bottom:16px">🔒</div>
+    <div id="lic-title" style="font-size:20px;font-weight:800;color:#111827;margin-bottom:10px"></div>
+    <div id="lic-msg"   style="font-size:14px;color:#6b7280;line-height:1.6;margin-bottom:24px"></div>
+    <a id="lic-form-btn" href="#" target="_blank" style="display:none;background:#2563eb;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:700;display:inline-block;margin-bottom:10px">수강생 등록 신청하기</a>
+    <div id="lic-vendor" style="font-size:11px;color:#9ca3af;margin-top:8px"></div>
+  </div>
+</div>
+
 <!-- 상품 상세 모달 -->
 <div class="detail-backdrop" id="detail-backdrop" onclick="closeDetail(event)">
   <div class="detail-modal" onclick="event.stopPropagation()">
@@ -1656,6 +1667,49 @@ function renderCouponTable(coupons) {
     document.getElementById('coupon-empty-msg').style.display = 'none';
   }
 }
+
+// ── 라이선스 체크 ──────────────────────────────────────────────────────
+async function checkLicense() {
+  try {
+    const r = await fetch('/api/license/check');
+    const d = await r.json();
+    const overlay = document.getElementById('license-overlay');
+
+    const configs = {
+      approved:      null,  // 통과
+      no_vendor:     { icon:'🔑', title:'Wing 로그인이 필요합니다', msg:'먼저 쿠팡 Wing에 로그인해 주세요.\n로그인 후 앱을 재시작하면 자동으로 인증됩니다.', btn: false },
+      unregistered:  { icon:'📋', title:'수강생 등록이 필요합니다', msg:'로켓그로스 수강생 전용 도구입니다.\n아래 버튼으로 등록을 신청해 주세요.', btn: true },
+      pending:       { icon:'⏳', title:'승인 대기 중입니다', msg:'등록 신청이 확인되었습니다.\n강사 승인 후 이용 가능합니다. 잠시만 기다려주세요.', btn: false },
+      error:         { icon:'⚠️', title:'인증 서버에 연결할 수 없습니다', msg:'인터넷 연결을 확인하거나 잠시 후 다시 시도해 주세요.\n이전에 승인된 경우 자동으로 사용 가능합니다.', btn: false },
+    };
+
+    const cfg = configs[d.status];
+    if (!cfg) return;  // approved → 정상 진행
+
+    document.getElementById('lic-icon').textContent  = cfg.icon;
+    document.getElementById('lic-title').textContent = cfg.title;
+    document.getElementById('lic-msg').textContent   = cfg.msg;
+
+    const formBtn = document.getElementById('lic-form-btn');
+    if (cfg.btn && d.form_url) {
+      formBtn.href = d.form_url;
+      formBtn.style.display = 'inline-block';
+    } else {
+      formBtn.style.display = 'none';
+    }
+
+    if (d.vendor_id) {
+      document.getElementById('lic-vendor').textContent = `Vendor ID: ${d.vendor_id}`;
+    }
+
+    overlay.style.display = 'flex';
+  } catch(e) {
+    // 라이선스 서버 오류 시 통과 (오프라인 허용)
+    console.warn('license check failed', e);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', checkLicense);
 
 async function loadAndCalculate() {
   closeDlModal();

@@ -16,6 +16,7 @@ app.config['JSON_AS_ASCII'] = False
 
 import wing_api as wd
 import coupon_manager as cm
+import license as lc
 
 _dl_thread     = None
 _coupon_thread = None
@@ -145,6 +146,18 @@ def api_coupon_settings():
 def api_coupon_reset():
     cm.STATUS.update({'state':'idle','message':'','logs':[],'coupons':[]})
     return jsonify({'ok': True})
+
+
+# ════════════════ 라이선스 API ════════════════
+
+@app.route('/api/license/check')
+def api_license_check():
+    vendor_id = lc.get_vendor_id_from_cookies()
+    if not vendor_id:
+        return jsonify({'status': 'no_vendor', 'vendor_id': None, 'form_url': None})
+    status = lc.check_license(vendor_id)
+    form_url = lc.get_form_url(vendor_id) if status in ('unregistered', 'pending') else None
+    return jsonify({'status': status, 'vendor_id': vendor_id, 'form_url': form_url})
 
 
 if __name__ == '__main__':
