@@ -438,6 +438,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif; b
   <div class="header-title">🎯 쿠팡 <span>캠페인 분석기</span></div>
   <div class="header-right">
     <span id="file-status">광고보고서 xlsx 파일을 업로드하세요</span>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span style="font-size:11px;color:#6b7280;font-weight:600;">기간</span>
+      <input type="date" id="dl-start" style="padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
+      <span style="font-size:11px;color:#6b7280;">~</span>
+      <input type="date" id="dl-end" style="padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;">
+      <span id="date-hint" style="font-size:11px;color:#059669;font-weight:600;"></span>
+    </div>
     <button id="auto-btn" class="upload-btn" style="background:#059669" onclick="startAutoDownload()">⬇ 자동 다운로드</button>
     <button class="upload-btn" onclick="document.getElementById('file-input').click()">⬆ 보고서 업로드</button>
     <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
@@ -1599,14 +1606,50 @@ function renderAll() {
 const API = 'http://localhost:5100';
 let _pollTimer = null;
 
+function getPrevMonth() {
+  const today = new Date();
+  const last = new Date(today.getFullYear(), today.getMonth(), 0);
+  const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const fmt = d => d.toISOString().slice(0, 10);
+  return { start: fmt(first), end: fmt(last) };
+}
+
+function updateDateHint() {
+  const s = document.getElementById('dl-start').value;
+  const e = document.getElementById('dl-end').value;
+  const hint = document.getElementById('date-hint');
+  if (!s && !e) {
+    const prev = getPrevMonth();
+    hint.textContent = `※ 미설정 시 전월(${prev.start} ~ ${prev.end}) 자동 적용`;
+  } else {
+    hint.textContent = '';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  updateDateHint();
+  document.getElementById('dl-start').addEventListener('change', updateDateHint);
+  document.getElementById('dl-end').addEventListener('change', updateDateHint);
+});
+
 async function startAutoDownload() {
   const btn = document.getElementById('auto-btn');
   btn.disabled = true;
   btn.textContent = '⏳ 요청 중...';
   btn.style.background = '#6b7280';
 
+  const sVal = document.getElementById('dl-start').value;
+  const eVal = document.getElementById('dl-end').value;
+  const prev = getPrevMonth();
+  const startDate = (sVal || prev.start).replace(/-/g, '');
+  const endDate   = (eVal || prev.end).replace(/-/g, '');
+
   try {
-    const res = await fetch(`${API}/api/ad/start`, { method: 'POST', headers: {'Content-Type':'application/json'} });
+    const res = await fetch(`${API}/api/ad/start`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ start_date: startDate, end_date: endDate })
+    });
     const data = await res.json();
     if (!data.ok) {
       alert(data.msg || '시작 실패');
