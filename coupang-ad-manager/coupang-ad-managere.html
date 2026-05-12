@@ -1610,7 +1610,7 @@ function getPrevMonth() {
   const today = new Date();
   const last = new Date(today.getFullYear(), today.getMonth(), 0);
   const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const fmt = d => d.toISOString().slice(0, 10);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   return { start: fmt(first), end: fmt(last) };
 }
 
